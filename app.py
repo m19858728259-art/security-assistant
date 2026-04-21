@@ -44,6 +44,7 @@ def fetch_news():
         ("央视国际", "rss", "http://news.cctv.com/world/special/world/world_1/rss.xml"),
         ("参考消息", "rss", "https://rsshub.thisdotless.com/cankaoxiaoxi"),
         ("联合早报", "rss", "https://www.zaobao.com/special/realtime/rss.xml"),
+        ("benzhi.online", "benzhi_api", "https://benzhi.online/api/news?limit=50"),
     ]
     
     for name, typ, url in sources:
@@ -60,7 +61,7 @@ def fetch_news():
                         "published": item.get('ctime', '')[:10],
                         "source": name
                     })
-            else:
+            elif typ == "rss":
                 feed = feedparser.parse(url)
                 for entry in feed.entries[:100]:
                     pub_date = entry.get('published', '')
@@ -85,6 +86,19 @@ def fetch_news():
                         "published": pub_date,
                         "source": name
                     })
+            elif typ == "benzhi_api":
+                resp = requests.get(url, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("success"):
+                    for item in data.get("data", []):
+                        articles.append({
+                            "title": item.get('title', '无标题'),
+                            "summary": item.get('summary', '无简介')[:400],
+                            "link": item.get('url', ''),
+                            "published": item.get('createdAt', '')[:10] if item.get('createdAt') else "未知",
+                            "source": name
+                        })
         except Exception as e:
             st.warning(f"⚠️ {name} 获取失败: {e}")
             continue
@@ -99,7 +113,6 @@ def fetch_news():
     unique.sort(key=lambda x: x["published"], reverse=True)
     st.success(f"✅ 获取 {len(unique)} 条国际新闻（来自 {len(sources)} 个源）")
     return unique
-
 # ========== 地区关键词（细化）==========
 REGION_KEYWORDS = {
     "非洲": ["非洲", "尼日利亚", "肯尼亚", "南非", "埃塞俄比亚", "安哥拉", "刚果金", "加纳", "坦桑尼亚"],
