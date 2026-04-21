@@ -2,16 +2,16 @@ import streamlit as st
 import requests
 import pandas as pd
 import pydeck as pdk
-from datetime import datetime, timedelta
+from datetime import datetime
 import feedparser
 import re
 import json
 import os
 
 # ========== AI 配置（硅基流动，免费）==========
-# 注册：https://siliconflow.cn 获取 API Key（以 sk- 开头）
-import os
-SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
+# 从环境变量读取 API Key（安全）
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "你的硅基流动API_KEY")
+
 def call_ai(prompt):
     """调用硅基流动 DeepSeek-V2.5 模型"""
     url = "https://api.siliconflow.cn/v1/chat/completions"
@@ -19,7 +19,7 @@ def call_ai(prompt):
     data = {
         "model": "deepseek-ai/DeepSeek-V2.5",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,          # 降低温度，提高一致性
+        "temperature": 0.3,
         "max_tokens": 1024
     }
     try:
@@ -30,7 +30,7 @@ def call_ai(prompt):
     except Exception as e:
         return f"调用AI失败: {e}"
 
-# ========== 多新闻源获取（增强版）==========
+# ========== 多新闻源获取（每个源最多100条）==========
 def fetch_news():
     """从多个国内稳定新闻源获取国际新闻，每个源最多100条"""
     articles = []
@@ -99,6 +99,7 @@ def fetch_news():
     unique.sort(key=lambda x: x["published"], reverse=True)
     st.success(f"✅ 获取 {len(unique)} 条国际新闻（来自 {len(sources)} 个源）")
     return unique
+
 # ========== 地区关键词（细化）==========
 REGION_KEYWORDS = {
     "非洲": ["非洲", "尼日利亚", "肯尼亚", "南非", "埃塞俄比亚", "安哥拉", "刚果金", "加纳", "坦桑尼亚"],
@@ -127,14 +128,12 @@ def update_history(region, level, date_str):
     history = load_history()
     if region not in history:
         history[region] = []
-    # 保留最近7天
     history[region].append({"date": date_str, "level": level})
     history[region] = history[region][-7:]
     save_history(history)
     return history[region]
 
 def get_trend(history_list):
-    """根据历史等级判断趋势：上升/下降/平稳"""
     if len(history_list) < 2:
         return "数据不足"
     levels = {"高": 3, "中": 2, "低": 1}
@@ -169,13 +168,12 @@ def evaluate_risk(region, articles, history_trend=""):
     if news_count == 0:
         return "低", "无相关新闻，默认低风险", "低", 0
     
-    # 取前25条（增加样本）
-    top_news = relevant[:25]
+    # 取前50条相关新闻（增加样本量）
+    top_news = relevant[:50]
     context = ""
     for i, art in enumerate(top_news, 1):
         context += f"{i}. 【{art['source']}】{art['title']}\n   摘要：{art['summary'][:250]}\n\n"
     
-    # 高级提示词：多维度、引用新闻、历史趋势
     prompt = f"""你是一位资深海外利益安全分析师。基于以下关于{region}的{len(top_news)}条新闻，评估该地区对中国海外利益（中资企业、人员、投资项目）的安全风险。
 
 **历史趋势**：{history_trend}（请结合此趋势判断风险是加剧还是缓和）
@@ -195,13 +193,12 @@ def evaluate_risk(region, articles, history_trend=""):
 经济风险：[1-5分]
 对华关系：[1-5分]
 综合风险等级：[高/中/低]
-置信度：[高/中/低]（根据新闻数量、一致性、清晰度判断）
+置信度：[高/中/低]
 主要风险因素：（列出1-2个最突出的风险点，不超过30字）
 理由：（一句话总结，不超过50字）"""
     
     result = call_ai(prompt)
     
-    # 解析
     import re
     level = "中"
     confidence = "中"
@@ -218,11 +215,9 @@ def evaluate_risk(region, articles, history_trend=""):
     if factor_match:
         risk_factors = factor_match.group(1).strip()
     
-    # 如果新闻数量过少，强制降低置信度
     if news_count < 5:
         confidence = "低"
     
-    # 生成完整报告
     full_report = f"""**综合风险等级：{level}**（置信度：{confidence}）
 
 **四个维度评分**：
@@ -247,16 +242,38 @@ region_coords = {
     "北美": {"lat": 40.0, "lon": -100.0}
 }
 
+# ========== 生成报告函数 ==========
+def generate_markdown_report(results, news_count_total):
+    """生成 Markdown 格式的评估报告"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report = f"""# 洲际风险动态监测报告
+**生成时间**：{now}
+**数据来源**：{news_count_total} 条国际新闻（来自9个新闻源）
+
+## 风险评估热区图
+（请查看应用中的地图）
+
+## 各地区详细评估
+"""
+    for region, info in results.items():
+        report += f"\n### {region}\n"
+        report += f"- **风险等级**：{info['level']}\n"
+        report += f"- **置信度**：{info['confidence']}\n"
+        report += f"- **历史趋势**：{info['trend']}\n"
+        report += f"- **基于新闻数**：{info['news_count']}\n"
+        report += f"- **AI分析**：{info['report']}\n"
+    return report
+
 # ========== UI ==========
-st.set_page_config(page_title="海外利益安全风险评估 v3.0", layout="wide")
-st.title("🛡️ 海外利益安全风险评估与热区图")
-st.markdown("**多维评估 + 置信度 + 历史趋势** | 基于9个新闻源，每个地区最多25条新闻")
+st.set_page_config(page_title="洲际风险动态监测与报告平台", layout="wide")
+st.title("🌍 洲际风险动态监测与报告平台")
+st.markdown("**基于多元新闻挖掘的动态风险监测** | 多维度评估 + 置信度 + 历史趋势 | 数据源：9个新闻频道，每个源最多100条")
 
 with st.sidebar:
-    st.header("📌 评估设置")
+    st.header("📌 监测区域")
     regions = list(region_coords.keys())
-    selected = st.multiselect("选择要评估的地区", regions, default=regions)
-    if st.button("开始评估"):
+    selected = st.multiselect("选择要监测的洲际区域", regions, default=regions)
+    if st.button("开始动态监测"):
         st.session_state.evaluate = True
 
 # 初始化
@@ -265,7 +282,7 @@ if "evaluate" not in st.session_state:
 if "risk_results" not in st.session_state:
     st.session_state.risk_results = {}
 if "news" not in st.session_state:
-    with st.spinner("获取最新国际新闻..."):
+    with st.spinner("正在获取多元新闻数据..."):
         st.session_state.news = fetch_news()
 
 # 执行评估
@@ -274,10 +291,9 @@ if st.session_state.evaluate and selected:
     today_str = datetime.now().strftime("%Y-%m-%d")
     for i, reg in enumerate(selected):
         rel_count = count_relevant_news(reg, st.session_state.news)
-        # 获取历史趋势
         history = load_history().get(reg, [])
         trend = get_trend(history)
-        with st.spinner(f"评估 {reg}（基于 {rel_count} 条新闻，趋势：{trend}）..."):
+        with st.spinner(f"正在动态监测 {reg}（基于 {rel_count} 条新闻，趋势：{trend}）..."):
             level, report, confidence, news_used = evaluate_risk(reg, st.session_state.news, trend)
             st.session_state.risk_results[reg] = {
                 "level": level,
@@ -286,11 +302,10 @@ if st.session_state.evaluate and selected:
                 "confidence": confidence,
                 "trend": trend
             }
-            # 保存历史
             update_history(reg, level, today_str)
         progress.progress((i+1)/len(selected))
     st.session_state.evaluate = False
-    st.success("评估完成！")
+    st.success("动态监测完成！")
 
 # 热区图
 if st.session_state.risk_results:
@@ -315,29 +330,55 @@ if st.session_state.risk_results:
         view = pdk.ViewState(latitude=20, longitude=20, zoom=1.5)
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip={"text": "{region}\n风险等级: {risk}"}))
 else:
-    st.info("请在左侧选择地区并点击「开始评估」生成热区图。")
+    st.info("请左侧选择区域并点击「开始动态监测」生成风险地图。")
 
-# 详细报告
+# 详细报告与动态趋势
 if st.session_state.risk_results:
-    st.subheader("📋 详细评估报告")
+    st.subheader("📋 动态监测报告")
+    
+    # 添加“生成报告”按钮
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        if st.button("📄 生成 Markdown 报告"):
+            report_md = generate_markdown_report(st.session_state.risk_results, len(st.session_state.news))
+            st.download_button(
+                label="下载报告",
+                data=report_md,
+                file_name=f"risk_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown"
+            )
+    
+    # 展示每个地区的评估结果
     for reg, info in st.session_state.risk_results.items():
         with st.expander(f"{reg} - 风险等级：{info['level']}  (置信度：{info['confidence']})  历史趋势：{info['trend']}"):
             st.markdown(info["report"])
-            # 人工反馈按钮
-            col1, col2 = st.columns(2)
-            with col1:
+            # 人工反馈
+            col_a, col_b = st.columns(2)
+            with col_a:
                 if st.button("✅ 评估准确", key=f"good_{reg}"):
                     st.success("感谢反馈！")
-            with col2:
+            with col_b:
                 if st.button("❌ 评估有误", key=f"bad_{reg}"):
                     st.warning("请描述错误，我们将用于改进")
                     feedback = st.text_input("正确风险等级应为？", key=f"fb_{reg}")
                     if feedback:
                         st.info("已记录反馈，感谢帮助校准！")
+    
+    # 风险变化趋势表（基于历史）
+    st.subheader("📈 风险动态趋势（最近7天）")
+    history_data = load_history()
+    if history_data:
+        trend_df = pd.DataFrame([
+            {"地区": reg, "最近3次风险": " → ".join([h["level"] for h in hist[-3:]])}
+            for reg, hist in history_data.items() if reg in st.session_state.risk_results
+        ])
+        st.table(trend_df)
+    else:
+        st.info("暂无历史数据，连续监测几天后将显示趋势。")
 
 # 新闻列表
-with st.expander("📰 查看全部新闻（可展开）"):
-    for a in st.session_state.news[:60]:
+with st.expander("📰 查看多元新闻源（共{}条）".format(len(st.session_state.news))):
+    for a in st.session_state.news[:100]:
         st.markdown(f"**{a['title']}** ({a['published']})  `{a['source']}`")
         st.write(a['summary'][:200])
         st.markdown(f"[原文]({a['link']})")
