@@ -44,6 +44,15 @@ def fetch_news():
         ("央视国际", "rss", "http://news.cctv.com/world/special/world/world_1/rss.xml"),
         ("参考消息", "rss", "https://rsshub.thisdotless.com/cankaoxiaoxi"),
         ("联合早报", "rss", "https://www.zaobao.com/special/realtime/rss.xml"),
+            # 以下可以添加到 sources 列表中
+        ("德国之声中文", "rss", "https://rss.dw.com/feed/zh"),
+        ("法国国际广播中文", "rss", "https://www.rfi.fr/cn/rss"),
+        ("美国之音中文", "rss", "https://www.voachinese.com/api/zone_1"),
+        ("BBC中文网", "rss", "https://www.bbc.com/zhongwen/simp/index.xml"),
+        ("路透社中文网", "rss", "https://cn.reuters.com/rssFeed/news/"),
+        ("纽约时报中文网", "rss", "https://cn.nytimes.com/rss/"),
+        ("FT中文网", "rss", "https://www.ftchinese.com/rss/news"),
+        ("俄罗斯卫星通讯社中文", "rss", "https://sputniknews.cn/rss.xml"),
     ]
     
     for name, typ, url in sources:
