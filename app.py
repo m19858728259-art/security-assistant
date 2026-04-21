@@ -55,48 +55,24 @@ def fetch_news():
         ("俄罗斯卫星通讯社中文", "rss", "https://sputniknews.cn/rss.xml"),
     ]
     
-    for name, typ, url in sources:
+   for name, typ, url in sources:
         try:
             if typ == "api":
-                resp = requests.get(url, timeout=10)
+                # 新浪API已经通过num参数控制条数
+                resp = requests.get(url, timeout=15)  # 增加超时
                 resp.encoding = 'utf-8'
                 data = resp.json()
                 for item in data.get('result', {}).get('data', []):
-                    articles.append({
-                        "title": item.get('title', '无标题'),
-                        "summary": item.get('intro', '无简介'),
-                        "link": item.get('url', ''),
-                        "published": item.get('ctime', '')[:10],
-                        "source": name
-                    })
+                    articles.append({...})
             else:
                 feed = feedparser.parse(url)
-                for entry in feed.entries[:30]:
-                    pub_date = entry.get('published', '')
-                    if pub_date:
-                        try:
-                            dt = datetime.strptime(pub_date, "%a, %d %b %Y %H:%M:%S %Z")
-                            pub_date = dt.strftime("%Y-%m-%d")
-                        except:
-                            try:
-                                dt = datetime.strptime(pub_date[:25], "%a, %d %b %Y %H:%M:%S")
-                                pub_date = dt.strftime("%Y-%m-%d")
-                            except:
-                                pub_date = pub_date[:10] if len(pub_date) >= 10 else "未知"
-                    else:
-                        pub_date = "未知"
-                    summary = entry.get('summary', '')
-                    summary = re.sub(r'<[^>]+>', '', summary)[:400]
-                    articles.append({
-                        "title": entry.get('title', '无标题'),
-                        "summary": summary,
-                        "link": entry.get('link', ''),
-                        "published": pub_date,
-                        "source": name
-                    })
+                # 改为取前100条
+                for entry in feed.entries[:100]:
+                    # ... 处理每条新闻
         except Exception as e:
             st.warning(f"⚠️ {name} 获取失败: {e}")
             continue
+    # ... 去重、排序
     
     # 去重
     seen = set()
