@@ -32,10 +32,10 @@ def call_ai(prompt):
 
 # ========== 多新闻源获取（增强版）==========
 def fetch_news():
-    """从多个国内稳定新闻源获取国际新闻，返回列表"""
+    """从多个国内稳定新闻源获取国际新闻，每个源最多100条"""
     articles = []
     sources = [
-        ("新浪国际", "api", "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2517&num=30"),
+        ("新浪国际", "api", "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2517&num=100"),
         ("澎湃国际", "rss", "https://www.thepaper.cn/rss_3_news.xml"),
         ("观察者网", "rss", "https://rsshub.thisdotless.com/obs/guoji"),
         ("腾讯国际", "rss", "https://news.qq.com/newsgj/rss_newsgj.xml"),
@@ -44,35 +44,50 @@ def fetch_news():
         ("央视国际", "rss", "http://news.cctv.com/world/special/world/world_1/rss.xml"),
         ("参考消息", "rss", "https://rsshub.thisdotless.com/cankaoxiaoxi"),
         ("联合早报", "rss", "https://www.zaobao.com/special/realtime/rss.xml"),
-            # 以下可以添加到 sources 列表中
-        ("德国之声中文", "rss", "https://rss.dw.com/feed/zh"),
-        ("法国国际广播中文", "rss", "https://www.rfi.fr/cn/rss"),
-        ("美国之音中文", "rss", "https://www.voachinese.com/api/zone_1"),
-        ("BBC中文网", "rss", "https://www.bbc.com/zhongwen/simp/index.xml"),
-        ("路透社中文网", "rss", "https://cn.reuters.com/rssFeed/news/"),
-        ("纽约时报中文网", "rss", "https://cn.nytimes.com/rss/"),
-        ("FT中文网", "rss", "https://www.ftchinese.com/rss/news"),
-        ("俄罗斯卫星通讯社中文", "rss", "https://sputniknews.cn/rss.xml"),
     ]
     
-   for name, typ, url in sources:
+    for name, typ, url in sources:
         try:
             if typ == "api":
-                # 新浪API已经通过num参数控制条数
-                resp = requests.get(url, timeout=15)  # 增加超时
+                resp = requests.get(url, timeout=15)
                 resp.encoding = 'utf-8'
                 data = resp.json()
                 for item in data.get('result', {}).get('data', []):
-                    articles.append({...})
+                    articles.append({
+                        "title": item.get('title', '无标题'),
+                        "summary": item.get('intro', '无简介'),
+                        "link": item.get('url', ''),
+                        "published": item.get('ctime', '')[:10],
+                        "source": name
+                    })
             else:
                 feed = feedparser.parse(url)
-                # 改为取前100条
                 for entry in feed.entries[:100]:
-                    # ... 处理每条新闻
+                    pub_date = entry.get('published', '')
+                    if pub_date:
+                        try:
+                            dt = datetime.strptime(pub_date, "%a, %d %b %Y %H:%M:%S %Z")
+                            pub_date = dt.strftime("%Y-%m-%d")
+                        except:
+                            try:
+                                dt = datetime.strptime(pub_date[:25], "%a, %d %b %Y %H:%M:%S")
+                                pub_date = dt.strftime("%Y-%m-%d")
+                            except:
+                                pub_date = pub_date[:10] if len(pub_date) >= 10 else "未知"
+                    else:
+                        pub_date = "未知"
+                    summary = entry.get('summary', '')
+                    summary = re.sub(r'<[^>]+>', '', summary)[:400]
+                    articles.append({
+                        "title": entry.get('title', '无标题'),
+                        "summary": summary,
+                        "link": entry.get('link', ''),
+                        "published": pub_date,
+                        "source": name
+                    })
         except Exception as e:
             st.warning(f"⚠️ {name} 获取失败: {e}")
             continue
-    # ... 去重、排序
     
     # 去重
     seen = set()
@@ -84,7 +99,6 @@ def fetch_news():
     unique.sort(key=lambda x: x["published"], reverse=True)
     st.success(f"✅ 获取 {len(unique)} 条国际新闻（来自 {len(sources)} 个源）")
     return unique
-
 # ========== 地区关键词（细化）==========
 REGION_KEYWORDS = {
     "非洲": ["非洲", "尼日利亚", "肯尼亚", "南非", "埃塞俄比亚", "安哥拉", "刚果金", "加纳", "坦桑尼亚"],
